@@ -70,11 +70,32 @@ function isTone(value: unknown): value is Tone {
   return value === 'credible' || value === 'conflict' || value === 'knowledge' || value === 'emotion';
 }
 
+function extractOutputText(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return '';
+
+  const response = payload as {
+    output_text?: unknown;
+    output?: Array<{
+      type?: unknown;
+      content?: Array<{ type?: unknown; text?: unknown }>;
+    }>;
+  };
+
+  if (typeof response.output_text === 'string') return response.output_text;
+
+  return (response.output ?? [])
+    .filter((item) => item.type === 'message')
+    .flatMap((item) => item.content ?? [])
+    .filter((part) => part.type === 'output_text' && typeof part.text === 'string')
+    .map((part) => part.text as string)
+    .join('');
+}
+
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     return Response.json(
-      { code: 'AI_NOT_CONFIGURED', message: '当前站点未配置服务端 AI 密钥，将使用本地规则分析。' },
+      { code: 'AI_NOT_CONFIGURED', message: '当前站点未配置 DeepSeek 服务端密钥，将使用本地规则分析。' },
       { status: 503 },
     );
   }
@@ -104,23 +125,23 @@ export async function POST(request: Request) {
 所有分数为0到100的编辑评估，不代表平台官方评分或流量预测。risk越高表示夸大或错配风险越高。每个平台产出6个标题，按1A/1B、2A/2B、3A/3B组成三组可测试替代。理由要具体且简短。未选择的平台返回空数组。`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await fetch('https://api.deepseek.com/responses', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
         store: false,
         instructions,
         input: JSON.stringify({ transcript, platforms, tone, duration }),
+        reasoning: { effort: 'none' },
         max_output_tokens: 5000,
         text: {
           format: {
             type: 'json_schema',
             name: 'video_title_analysis',
-            strict: true,
             schema: resultSchema,
           },
         },
@@ -129,16 +150,17 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const detail = await response.text();
-      console.error('OpenAI response failed', response.status, detail.slice(0, 500));
+      console.error('DeepSeek response failed', response.status, detail.slice(0, 500));
       return Response.json({ code: 'AI_UNAVAILABLE', message: 'AI 分析暂时不可用，将回退到本地规则分析。' }, { status: 502 });
     }
 
-    const payload = (await response.json()) as { output_text?: string };
-    if (!payload.output_text) {
+    const payload = await response.json();
+    const outputText = extractOutputText(payload);
+    if (!outputText) {
       return Response.json({ code: 'AI_EMPTY', message: 'AI 未返回可用结果，将回退到本地规则分析。' }, { status: 502 });
     }
 
-    return Response.json(JSON.parse(payload.output_text));
+    return Response.json(JSON.parse(outputText));
   } catch (error) {
     console.error('AI analysis error', error);
     return Response.json({ code: 'AI_ERROR', message: 'AI 分析遇到错误，将回退到本地规则分析。' }, { status: 502 });

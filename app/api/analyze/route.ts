@@ -92,15 +92,7 @@ function extractOutputText(payload: unknown) {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    return Response.json(
-      { code: 'AI_NOT_CONFIGURED', message: '当前站点未配置 DeepSeek 服务端密钥，将使用本地规则分析。' },
-      { status: 503 },
-    );
-  }
-
-  let body: { transcript?: unknown; platforms?: unknown; tone?: unknown; duration?: unknown };
+  let body: { transcript?: unknown; platforms?: unknown; tone?: unknown; duration?: unknown; apiKey?: unknown; model?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -111,6 +103,15 @@ export async function POST(request: Request) {
   const platforms = Array.isArray(body.platforms) ? body.platforms.filter(isPlatform) : [];
   const tone: Tone = isTone(body.tone) ? body.tone : 'credible';
   const duration = typeof body.duration === 'number' && Number.isFinite(body.duration) ? body.duration : null;
+  const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+  const model = body.model === 'deepseek-v4-pro' ? 'deepseek-v4-pro' : 'deepseek-v4-flash';
+
+  if (apiKey.length < 20 || apiKey.length > 512) {
+    return Response.json(
+      { code: 'AI_NOT_CONFIGURED', message: '请先在网页右上角配置有效的 DeepSeek API 密钥。' },
+      { status: 400 },
+    );
+  }
 
   if (transcript.length < 80 || transcript.length > 24000 || platforms.length === 0) {
     return Response.json(
@@ -132,7 +133,7 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+        model,
         store: false,
         instructions,
         input: JSON.stringify({ transcript, platforms, tone, duration }),

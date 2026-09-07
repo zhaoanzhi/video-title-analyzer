@@ -9,9 +9,12 @@ import {
   ChevronDown,
   CircleGauge,
   Clipboard,
+  Eye,
+  EyeOff,
   FileVideo2,
   Film,
   Info,
+  KeyRound,
   LoaderCircle,
   RefreshCw,
   ScanSearch,
@@ -26,6 +29,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { analyzeLocally, type AnalysisResult, type Platform, type TitleCandidate, type Tone } from '@/lib/analyzer';
@@ -56,6 +63,14 @@ type VideoMeta = {
 };
 
 type AnalysisState = 'idle' | 'analyzing' | 'done' | 'error';
+type DeepSeekModel = 'deepseek-v4-flash' | 'deepseek-v4-pro';
+
+const deepSeekKeyStorage = 'title-radar.deepseek-api-key.v1';
+const deepSeekModelStorage = 'title-radar.deepseek-model.v1';
+const deepSeekModels: Array<{ value: DeepSeekModel; label: string; hint: string }> = [
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', hint: '更快、更省，适合日常标题分析' },
+  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', hint: '质量优先，费用与等待时间更高' },
+];
 
 const toneOptions: Array<{ value: Tone; label: string; hint: string }> = [
   { value: 'credible', label: '克制可信', hint: '清楚，不冒进' },
@@ -239,12 +254,62 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [iteration, setIteration] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deepSeekApiKey, setDeepSeekApiKey] = useState('');
+  const [deepSeekModel, setDeepSeekModel] = useState<DeepSeekModel>('deepseek-v4-flash');
+  const [apiDialogOpen, setApiDialogOpen] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [modelDraft, setModelDraft] = useState<DeepSeekModel>('deepseek-v4-flash');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiSettingsError, setApiSettingsError] = useState('');
   const resultsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const transcriptCount = transcript.replace(/\s/g, '').length;
   const canAnalyze = transcriptCount >= 80 && platforms.length > 0 && analysisState !== 'analyzing';
   const durationInfo = videoMeta ? durationMessage(videoMeta.duration) : null;
+
+  useEffect(() => {
+    const savedKey = window.localStorage.getItem(deepSeekKeyStorage) ?? '';
+    const savedModel = window.localStorage.getItem(deepSeekModelStorage);
+    setDeepSeekApiKey(savedKey);
+    if (savedModel === 'deepseek-v4-pro' || savedModel === 'deepseek-v4-flash') {
+      setDeepSeekModel(savedModel);
+    }
+  }, []);
+
+  const changeApiDialog = (open: boolean) => {
+    if (open) {
+      setApiKeyDraft(deepSeekApiKey);
+      setModelDraft(deepSeekModel);
+      setShowApiKey(false);
+      setApiSettingsError('');
+    }
+    setApiDialogOpen(open);
+  };
+
+  const saveApiSettings = () => {
+    const normalizedKey = apiKeyDraft.trim();
+    if (normalizedKey.length < 20 || normalizedKey.length > 512 || /\s/.test(normalizedKey)) {
+      setApiSettingsError('密钥格式看起来不完整，请检查是否多了空格或漏掉字符。');
+      return;
+    }
+    window.localStorage.setItem(deepSeekKeyStorage, normalizedKey);
+    window.localStorage.setItem(deepSeekModelStorage, modelDraft);
+    setDeepSeekApiKey(normalizedKey);
+    setDeepSeekModel(modelDraft);
+    setApiSettingsError('');
+    setApiDialogOpen(false);
+  };
+
+  const clearApiSettings = () => {
+    window.localStorage.removeItem(deepSeekKeyStorage);
+    window.localStorage.removeItem(deepSeekModelStorage);
+    setDeepSeekApiKey('');
+    setDeepSeekModel('deepseek-v4-flash');
+    setApiKeyDraft('');
+    setModelDraft('deepseek-v4-flash');
+    setApiSettingsError('');
+  };
 
   const togglePlatform = (platform: Platform) => {
     setPlatforms((current) => current.includes(platform) ? current.filter((item) => item !== platform) : [...current, platform]);
@@ -282,6 +347,8 @@ export default function Home() {
           platforms: params.platformValues,
           tone: params.toneValue,
           duration: params.duration,
+          apiKey: deepSeekApiKey,
+          model: deepSeekModel,
         }),
       });
       if (response.ok) {
@@ -300,7 +367,7 @@ export default function Home() {
       window.setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
     }
     return nextResult;
-  }, []);
+  }, [deepSeekApiKey, deepSeekModel]);
 
   const handleAnalyze = async (nextIteration = iteration) => {
     try {
@@ -420,9 +487,102 @@ export default function Home() {
               <p className="text-xs text-slate-500">双平台内容信号分析</p>
             </div>
           </div>
-          <div className="hidden items-center gap-2 text-xs text-slate-400 sm:flex">
-            <ShieldCheck className="size-4 text-emerald-300" />
-            视频在本机浏览器读取，不上传、不保存
+          <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 text-xs text-slate-400 lg:flex">
+              <ShieldCheck className="size-4 text-emerald-300" />
+              视频在本机浏览器读取，不上传、不保存
+            </div>
+            <Dialog open={apiDialogOpen} onOpenChange={changeApiDialog}>
+              <DialogTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={deepSeekApiKey
+                      ? 'border-emerald-400/35 bg-emerald-400/[0.07] text-emerald-200 hover:bg-emerald-400/12 hover:text-emerald-100'
+                      : 'border-orange-400/35 bg-orange-400/[0.07] text-orange-200 hover:bg-orange-400/12 hover:text-orange-100'}
+                  />
+                }
+              >
+                <KeyRound data-icon="inline-start" />
+                API 设置
+                <span className={`size-1.5 rounded-full ${deepSeekApiKey ? 'bg-emerald-300' : 'bg-orange-300'}`} aria-hidden="true" />
+              </DialogTrigger>
+              <DialogContent className="gap-0 border border-slate-700 bg-[#121b2e] p-0 text-slate-100 ring-0 sm:max-w-lg">
+                <DialogHeader className="border-b border-slate-700/80 px-5 py-5 pr-12">
+                  <DialogTitle className="flex items-center gap-2 text-lg font-semibold text-white">
+                    <KeyRound className="size-5 text-cyan-300" />DeepSeek API 设置
+                  </DialogTitle>
+                  <DialogDescription className="leading-6 text-slate-400">
+                    密钥只保存在当前浏览器，不会持久化在网站服务器或同步到其他设备。分析时会通过 HTTPS 临时发送给本站服务端，再转交 DeepSeek。
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-5 px-5 py-5">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="deepseek-key" className="text-slate-200">API 密钥</Label>
+                      <Badge variant="outline" className={deepSeekApiKey ? 'border-emerald-400/30 text-emerald-200' : 'border-orange-400/30 text-orange-200'}>
+                        {deepSeekApiKey ? '此设备已配置' : '尚未配置'}
+                      </Badge>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        id="deepseek-key"
+                        type={showApiKey ? 'text' : 'password'}
+                        value={apiKeyDraft}
+                        onChange={(event) => {
+                          setApiKeyDraft(event.target.value);
+                          setApiSettingsError('');
+                        }}
+                        autoComplete="new-password"
+                        spellCheck={false}
+                        placeholder="粘贴 DeepSeek API Key"
+                        className="h-11 border-slate-600 bg-slate-950/45 pr-11 font-mono text-sm text-slate-100 placeholder:text-slate-600 focus-visible:border-cyan-300/65 focus-visible:ring-cyan-300/20"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setShowApiKey((current) => !current)}
+                        aria-label={showApiKey ? '隐藏 API 密钥' : '显示 API 密钥'}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      >
+                        {showApiKey ? <EyeOff /> : <Eye />}
+                      </Button>
+                    </div>
+                    {apiSettingsError ? <p role="alert" className="text-sm text-orange-200">{apiSettingsError}</p> : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="deepseek-model" className="text-slate-200">模型</Label>
+                    <NativeSelect
+                      id="deepseek-model"
+                      value={modelDraft}
+                      onChange={(event) => setModelDraft(event.target.value as DeepSeekModel)}
+                      className="w-full [&_select]:h-11 [&_select]:border-slate-600 [&_select]:bg-slate-950/45 [&_select]:text-slate-100 [&_select]:focus-visible:border-cyan-300/65 [&_select]:focus-visible:ring-cyan-300/20"
+                    >
+                      {deepSeekModels.map((model) => (
+                        <NativeSelectOption key={model.value} value={model.value}>{model.label} · {model.hint}</NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </div>
+
+                  <p className="rounded-xl border border-cyan-300/15 bg-cyan-300/[0.045] px-3.5 py-3 text-xs leading-5 text-slate-400">
+                    不要在公共电脑保存密钥。可在 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer" className="text-cyan-200 underline decoration-cyan-300/40 underline-offset-4 hover:text-cyan-100">DeepSeek 平台</a>创建或撤销密钥。
+                  </p>
+                </div>
+
+                <DialogFooter className="m-0 justify-between rounded-none rounded-b-xl border-slate-700 bg-slate-950/35 px-5 py-4 sm:justify-between">
+                  <Button type="button" variant="ghost" onClick={clearApiSettings} disabled={!deepSeekApiKey && !apiKeyDraft} className="text-slate-400 hover:bg-slate-800 hover:text-white">
+                    清除本机密钥
+                  </Button>
+                  <Button type="button" onClick={saveApiSettings} className="bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200">
+                    保存到此设备
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </header>
@@ -562,7 +722,7 @@ export default function Home() {
               <div className="scanline absolute inset-y-0 w-36" />
               <LoaderCircle className="mx-auto size-8 animate-spin text-cyan-300" />
               <h2 className="mt-4 text-lg font-semibold text-white">正在拆解内容结构与标题风险</h2>
-              <p className="mt-2 text-sm text-slate-400">会先尝试安全的服务端 AI；不可用时自动转为本地规则分析。</p>
+              <p className="mt-2 text-sm text-slate-400">会使用此设备保存的 DeepSeek 密钥；不可用时自动转为本地规则分析。</p>
             </section>
           )}
 
@@ -580,7 +740,7 @@ export default function Home() {
                     <div className="flex items-center gap-2">
                       <Badge className="bg-cyan-300/12 text-cyan-200">02 / 内容画像</Badge>
                       <Badge variant="outline" className={result.source === 'ai' ? 'border-violet-400/35 text-violet-200' : 'border-slate-600 text-slate-400'}>
-                        {result.source === 'ai' ? '服务端 AI 分析' : '本地规则分析'}
+                        {result.source === 'ai' ? 'DeepSeek AI 分析' : '本地规则分析'}
                       </Badge>
                     </div>
                     <h2 id="analysis-heading" className="mt-3 text-2xl font-semibold tracking-tight text-white">内容骨架先于标题</h2>
@@ -640,7 +800,7 @@ export default function Home() {
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-emerald-300" />
             <div>
               <h2 className="font-semibold text-slate-200">边界说明</h2>
-              <p className="mt-1">标题分数是可解释的编辑评估，不是平台官方评分，也无法保证流量。视频文件只在当前浏览器里读取元数据和抽帧；服务端分析只接收你提交的转写，不接收视频。请在发布前核对事实、数字、资质与引用来源。</p>
+              <p className="mt-1">标题分数是可解释的编辑评估，不是平台官方评分，也无法保证流量。视频文件只在当前浏览器里读取元数据和抽帧；服务端分析只接收你提交的转写和本次调用所需的 DeepSeek 密钥，不接收视频，也不保存密钥。请在发布前核对事实、数字、资质与引用来源。</p>
             </div>
           </div>
           <details className="mt-4 border-t border-slate-800 pt-4">

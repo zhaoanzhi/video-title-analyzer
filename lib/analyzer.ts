@@ -16,6 +16,15 @@ export type TitleCandidate = {
   title: string;
   rationale: string;
   scores: TitleScores;
+  overall: number;
+};
+
+export type PublishingPack = {
+  coverText: string[];
+  description: string;
+  tags: string[];
+  pinnedComment: string;
+  timing: string;
 };
 
 export type AnalysisResult = {
@@ -32,7 +41,13 @@ export type AnalysisResult = {
     cautionClaims: string[];
     keywords: string[];
   };
+  sellingPoints: Array<{
+    claim: string;
+    evidence: string;
+    angle: string;
+  }>;
   titles: Record<Platform, TitleCandidate[]>;
+  publishing: Record<Platform, PublishingPack>;
 };
 
 type AnalyzeInput = {
@@ -170,6 +185,13 @@ function titleRationale(title: string, platform: Platform, keywords: string[], s
   return `${shape}${hit ? `，核心词是“${hit}”` : ''}${caution}。`;
 }
 
+function overallScore(scores: TitleScores, platform: Platform) {
+  const positive = platform === 'douyin'
+    ? scores.hook * 0.24 + scores.curiosity * 0.18 + scores.clarity * 0.16 + scores.match * 0.27 + scores.discovery * 0.15
+    : scores.hook * 0.12 + scores.curiosity * 0.14 + scores.clarity * 0.22 + scores.match * 0.3 + scores.discovery * 0.22;
+  return clamp(positive - scores.risk * 0.22);
+}
+
 function buildTitleTexts(platform: Platform, tone: Tone, iteration: number, parts: {
   topic: string;
   keyword2: string;
@@ -195,6 +217,10 @@ function buildTitleTexts(platform: Platform, tone: Tone, iteration: number, part
       `为什么${topic}总被误解？${conflict}`,
       `原来${topic}的转折，藏在${payoff}`,
       `${lead}${topic}：${keyword2}`,
+      `${topic}最容易忽略的，其实是${keyword2}`,
+      `做${topic}之前，先看懂${conflict}`,
+      `${hook}？真正的答案是${payoff}`,
+      `${topic}别讲复杂，抓住${keyword2}就够了`,
     ],
     [
       `关于${topic}，先记住${payoff}`,
@@ -203,6 +229,10 @@ function buildTitleTexts(platform: Platform, tone: Tone, iteration: number, part
       `想看懂${topic}，先分清${keyword2}`,
       `${minutes}分钟后，我对${topic}改观了`,
       `${lead}，其实是${payoff}`,
+      `${topic}卡住你的，不一定是${keyword2}`,
+      `先别照搬方法：${conflict}`,
+      `${topic}做到最后，拼的是${payoff}`,
+      `如果你也在做${topic}，记住${keyword2}`,
     ],
   ];
 
@@ -214,6 +244,10 @@ function buildTitleTexts(platform: Platform, tone: Tone, iteration: number, part
       `复盘${topic}：最强开场、关键转折与最后结论`,
       `关于${topic}，真正需要看懂的是${payoff}`,
       `${lead}${topic}：一份有依据的内容梳理`,
+      `${topic}实操复盘：${keyword2}为什么比想象中更重要`,
+      `从${hook}到${payoff}：${topic}的完整逻辑`,
+      `${topic}常见误区：问题不只在${keyword2}`,
+      `${topic}方法论：如何找到关键冲突并完成收束`,
     ],
     [
       `${topic}到底在讲什么？从${keyword2}到最终结论的完整梳理`,
@@ -222,6 +256,10 @@ function buildTitleTexts(platform: Platform, tone: Tone, iteration: number, part
       `${minutes}分钟看懂${topic}，以及它为什么与${keyword2}有关`,
       `拆解${topic}：哪些信息重要，哪些说法需要谨慎`,
       `${lead}${topic}，结论并不是一句口号`,
+      `${topic}案例分析：从开场问题到最终回报`,
+      `为什么${topic}容易失效？关键环节完整拆解`,
+      `${topic}的判断框架：${keyword2}、转折与结论`,
+      `认真聊聊${topic}：方法、边界和可验证的结论`,
     ],
   ];
 
@@ -238,8 +276,11 @@ function makeTitles(platform: Platform, tone: Tone, iteration: number, parts: Pa
       title,
       rationale: titleRationale(title, platform, keywords, scores),
       scores,
+      overall: overallScore(scores, platform),
     };
-  });
+  })
+    .sort((a, b) => b.overall - a.overall)
+    .map((candidate, index) => ({ ...candidate, pair: `${index + 1}` }));
 }
 
 export function analyzeLocally(input: AnalyzeInput): AnalysisResult {
@@ -270,6 +311,13 @@ export function analyzeLocally(input: AnalyzeInput): AnalysisResult {
     payoff: safeTitlePart(payoff, 16),
     minutes: input.duration && input.duration > 0 ? `${Math.max(1, Math.round(input.duration / 60))}` : '3',
   };
+  const description = `${trimPhrase(hook, 54)}。${trimPhrase(conflict, 54)}。${trimPhrase(payoff, 54)}。`;
+  const tags = keywords.slice(0, 5);
+  const sellingPoints = [
+    { claim: trimPhrase(hook, 48), evidence: '来自转写开头与前段的高信息密度表述。', angle: '开场问题' },
+    { claim: trimPhrase(conflict, 48), evidence: '来自转写中出现反差、误区或关键判断的位置。', angle: '核心冲突' },
+    { claim: trimPhrase(payoff, 48), evidence: '来自转写结尾附近能够收束全文的结论。', angle: '观看回报' },
+  ];
 
   return {
     source: 'local',
@@ -285,9 +333,26 @@ export function analyzeLocally(input: AnalyzeInput): AnalysisResult {
       cautionClaims: cautionClaims.length ? cautionClaims : ['未检测到明显的绝对化、效果承诺或高风险专业领域表述。'],
       keywords,
     },
+    sellingPoints,
     titles: {
       douyin: input.platforms.includes('douyin') ? makeTitles('douyin', input.tone, input.iteration ?? 0, titleParts, keywords, sentences) : [],
       bilibili: input.platforms.includes('bilibili') ? makeTitles('bilibili', input.tone, input.iteration ?? 0, titleParts, keywords, sentences) : [],
+    },
+    publishing: {
+      douyin: {
+        coverText: [trimPhrase(hook, 12), trimPhrase(payoff, 12)],
+        description,
+        tags,
+        pinnedComment: `你在“${topic}”这件事上，最容易卡在哪一步？`,
+        timing: '优先参考你账号后台的粉丝活跃时段；暂无数据时，可先测试午间与晚间两个固定时段。',
+      },
+      bilibili: {
+        coverText: [trimPhrase(topic, 10), trimPhrase(keyword2, 12)],
+        description: `${description}\n本期围绕${topic}，梳理关键问题、过程转折与最终结论。`,
+        tags,
+        pinnedComment: `这期关于“${topic}”的哪个判断最值得继续展开？欢迎留下你的具体问题。`,
+        timing: '优先参考创作中心的观众活跃数据；保持栏目更新时间稳定，比套用通用“最佳时间”更可靠。',
+      },
     },
   };
 }

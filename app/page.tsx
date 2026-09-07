@@ -15,12 +15,16 @@ import {
   Film,
   Info,
   KeyRound,
+  Lightbulb,
   LoaderCircle,
+  MessageCircle,
+  PackageCheck,
   RefreshCw,
   ScanSearch,
   ShieldCheck,
   Sparkles,
   Target,
+  Trophy,
   UploadCloud,
   Users,
   WandSparkles,
@@ -35,7 +39,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
-import { analyzeLocally, type AnalysisResult, type Platform, type TitleCandidate, type Tone } from '@/lib/analyzer';
+import { analyzeLocally, type AnalysisResult, type Platform, type PublishingPack, type TitleCandidate, type Tone } from '@/lib/analyzer';
 
 declare global {
   interface Document {
@@ -190,9 +194,14 @@ function TitleCard({ item, featured, onCopy, copied }: { item: TitleCandidate; f
     <article className={`relative overflow-hidden rounded-2xl border p-5 transition-colors ${featured ? 'border-cyan-300/45 bg-cyan-300/[0.055]' : 'border-slate-700/80 bg-slate-900/45 hover:border-slate-600'}`}>
       {featured && <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300 to-transparent" />}
       <div className="flex items-start gap-3">
-        <Badge variant="outline" className={featured ? 'border-cyan-300/50 bg-cyan-300/10 text-cyan-200' : 'border-slate-600 text-slate-300'}>{item.pair}</Badge>
+        <Badge variant="outline" className={featured ? 'border-cyan-300/50 bg-cyan-300/10 text-cyan-200' : 'border-slate-600 text-slate-300'}>
+          {featured ? `TOP ${item.pair}` : `#${item.pair}`}
+        </Badge>
         <div className="min-w-0 flex-1">
-          <h4 className="text-[1.05rem] font-semibold leading-7 tracking-tight text-white">{item.title}</h4>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h4 className="text-[1.05rem] font-semibold leading-7 tracking-tight text-white">{item.title}</h4>
+            <span className="rounded-lg border border-violet-400/25 bg-violet-400/10 px-2 py-1 font-mono text-sm font-semibold text-violet-200">综合 {item.overall}</span>
+          </div>
           <p className="mt-2 text-sm leading-6 text-slate-400">{item.rationale}</p>
         </div>
         <Button variant="ghost" size="icon" onClick={onCopy} aria-label={`复制标题：${item.title}`} className="text-slate-400 hover:bg-slate-800 hover:text-white">
@@ -231,14 +240,48 @@ function PlatformResults({ platform, items, copiedId, onCopy }: { platform: Plat
             <span className="text-slate-500"> 这是创作方法，不是平台算法事实。</span>
           </p>
         </div>
-        <Badge variant="outline" className="border-slate-700 bg-slate-900/60 text-slate-400">3 组 A/B · 分数为编辑评估</Badge>
+        <Badge variant="outline" className="border-slate-700 bg-slate-900/60 text-slate-400">10 个候选 · 已按综合分排序</Badge>
       </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        {items.map((item, index) => (
-          <TitleCard key={item.id} item={item} featured={index === 0} copied={copiedId === item.id} onCopy={() => onCopy(item)} />
+      <div className="grid gap-4 xl:grid-cols-3">
+        {items.slice(0, 3).map((item) => (
+          <TitleCard key={item.id} item={item} featured copied={copiedId === item.id} onCopy={() => onCopy(item)} />
         ))}
       </div>
+      {items.length > 3 && (
+        <details className="rounded-2xl border border-slate-700/75 bg-slate-950/25 p-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-slate-300"><ChevronDown className="size-4" />查看其余 {items.length - 3} 个候选</summary>
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            {items.slice(3).map((item) => (
+              <TitleCard key={item.id} item={item} copied={copiedId === item.id} onCopy={() => onCopy(item)} />
+            ))}
+          </div>
+        </details>
+      )}
     </section>
+  );
+}
+
+function PublishingPackCard({ platform, pack, copied, onCopy }: { platform: Platform; pack: PublishingPack; copied: boolean; onCopy: () => void }) {
+  const isDouyin = platform === 'douyin';
+  return (
+    <article className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Badge className={isDouyin ? 'bg-white text-black' : 'bg-[#00aeec] text-white'}>{isDouyin ? '抖音' : '哔哩哔哩'}</Badge>
+          <h3 className="mt-3 text-lg font-semibold text-white">一键发布素材包</h3>
+        </div>
+        <Button variant="outline" size="sm" onClick={onCopy} className="border-slate-600 bg-slate-950/50 text-slate-200 hover:bg-slate-800">
+          {copied ? <Check data-icon="inline-start" className="text-emerald-300" /> : <Clipboard data-icon="inline-start" />}{copied ? '已复制' : '复制整包'}
+        </Button>
+      </div>
+      <div className="mt-5 space-y-4 text-sm leading-6">
+        <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">封面大字</p><div className="mt-2 flex flex-wrap gap-2">{pack.coverText.map((text) => <Badge key={text} variant="outline" className="border-cyan-300/25 text-cyan-200">{text}</Badge>)}</div></div>
+        <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">简介</p><p className="mt-1 whitespace-pre-line text-slate-300">{pack.description}</p></div>
+        <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">标签</p><p className="mt-1 text-violet-200">{pack.tags.map((tag) => `#${tag.replace(/^#/, '')}`).join(' ')}</p></div>
+        <div><p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-slate-500"><MessageCircle className="size-3.5" />置顶评论</p><p className="mt-1 text-slate-300">{pack.pinnedComment}</p></div>
+        <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">发布时间</p><p className="mt-1 text-slate-400">{pack.timing}</p></div>
+      </div>
+    </article>
   );
 }
 
@@ -412,10 +455,23 @@ export default function Home() {
     void handleAnalyze(next);
   };
 
-  const copyTitle = async (item: TitleCandidate) => {
-    await navigator.clipboard.writeText(item.title);
-    setCopiedId(item.id);
+  const copyText = async (id: string, text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedId(id);
     window.setTimeout(() => setCopiedId(null), 1600);
+  };
+
+  const copyTitle = async (item: TitleCandidate) => copyText(item.id, item.title);
+
+  const copyPublishingPack = async (platform: Platform, pack: PublishingPack) => {
+    const label = platform === 'douyin' ? '抖音' : '哔哩哔哩';
+    await copyText(`pack-${platform}`, [
+      `【${label}封面】${pack.coverText.join(' / ')}`,
+      `【简介】${pack.description}`,
+      `【标签】${pack.tags.map((tag) => `#${tag.replace(/^#/, '')}`).join(' ')}`,
+      `【置顶评论】${pack.pinnedComment}`,
+      `【发布时间】${pack.timing}`,
+    ].join('\n\n'));
   };
 
   useEffect(() => {
@@ -484,7 +540,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-base font-semibold tracking-[0.08em] text-white">标题雷达</h1>
-              <p className="text-xs text-slate-500">双平台内容信号分析</p>
+              <p className="text-xs text-slate-500">视频发布助手 V2</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -709,7 +765,7 @@ export default function Home() {
             <div className="xl:min-w-52">
               <Button size="lg" disabled={!canAnalyze} onClick={() => void handleAnalyze()} className="h-12 w-full rounded-xl bg-cyan-300 px-5 text-base font-semibold text-slate-950 shadow-[0_0_32px_rgb(103_232_249/16%)] hover:bg-cyan-200">
                 {analysisState === 'analyzing' ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <WandSparkles data-icon="inline-start" />}
-                {analysisState === 'analyzing' ? '正在分析…' : '分析并生成标题'}
+                {analysisState === 'analyzing' ? '正在生成发布方案…' : '生成完整发布方案'}
               </Button>
               {!canAnalyze && analysisState !== 'analyzing' && <p className="mt-2 text-center text-xs text-slate-500">补足转写并选择平台后可用</p>}
             </div>
@@ -721,8 +777,8 @@ export default function Home() {
             <section className="focus-panel relative overflow-hidden rounded-3xl border border-slate-700/80 bg-[#121b2e]/92 p-8 text-center">
               <div className="scanline absolute inset-y-0 w-36" />
               <LoaderCircle className="mx-auto size-8 animate-spin text-cyan-300" />
-              <h2 className="mt-4 text-lg font-semibold text-white">正在拆解内容结构与标题风险</h2>
-              <p className="mt-2 text-sm text-slate-400">会使用此设备保存的 DeepSeek 密钥；不可用时自动转为本地规则分析。</p>
+              <h2 className="mt-4 text-lg font-semibold text-white">正在提炼卖点、生成候选并独立评分</h2>
+              <p className="mt-2 text-sm text-slate-400">还会同步准备封面大字、简介、标签和置顶评论；不可用时自动转为本地规则分析。</p>
             </section>
           )}
 
@@ -760,6 +816,21 @@ export default function Home() {
                   ))}
                 </div>
 
+                {result.sellingPoints?.length ? (
+                  <div className="mt-5 border-t border-slate-700/70 pt-5">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-cyan-200"><Lightbulb className="size-4" />可验证的内容卖点</h3>
+                    <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                      {result.sellingPoints.map((point, index) => (
+                        <article key={`${point.angle}-${index}`} className="rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.035] p-4">
+                          <Badge variant="outline" className="border-cyan-300/30 text-cyan-200">{point.angle}</Badge>
+                          <p className="mt-3 font-medium leading-6 text-slate-100">{point.claim}</p>
+                          <p className="mt-2 text-xs leading-5 text-slate-500">依据：{point.evidence}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <article className="rounded-2xl border border-violet-400/20 bg-violet-400/[0.045] p-4">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-violet-200"><Sparkles className="size-4" />情绪共鸣语句</h3>
@@ -776,7 +847,7 @@ export default function Home() {
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                   <div>
                     <Badge className="bg-cyan-300/12 text-cyan-200">03 / 标题候选</Badge>
-                    <h2 id="titles-heading" className="mt-3 text-2xl font-semibold tracking-tight text-white">同一内容，两种平台表达</h2>
+                    <h2 id="titles-heading" className="mt-3 flex items-center gap-2 text-2xl font-semibold tracking-tight text-white"><Trophy className="size-6 text-violet-300" />两套策略，自动选出 Top 3</h2>
                   </div>
                   <Button variant="outline" onClick={regenerate} className="border-slate-600 bg-slate-900/60 text-slate-200 hover:bg-slate-800">
                     <RefreshCw data-icon="inline-start" />按当前语气重生成
@@ -785,12 +856,26 @@ export default function Home() {
                 <PlatformResults platform="douyin" items={result.titles.douyin} copiedId={copiedId} onCopy={(item) => void copyTitle(item)} />
                 <PlatformResults platform="bilibili" items={result.titles.bilibili} copiedId={copiedId} onCopy={(item) => void copyTitle(item)} />
               </section>
+
+              {result.publishing ? (
+                <section aria-labelledby="publishing-heading" className="space-y-4">
+                  <div>
+                    <Badge className="bg-cyan-300/12 text-cyan-200">04 / 发布素材</Badge>
+                    <h2 id="publishing-heading" className="mt-3 flex items-center gap-2 text-2xl font-semibold tracking-tight text-white"><PackageCheck className="size-6 text-cyan-300" />从标题继续到发布</h2>
+                    <p className="mt-2 text-sm text-slate-400">封面、简介、标签和置顶评论都从同一份转写生成，可整包复制后再做最后的人类判断。</p>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {result.titles.douyin.length > 0 && <PublishingPackCard platform="douyin" pack={result.publishing.douyin} copied={copiedId === 'pack-douyin'} onCopy={() => void copyPublishingPack('douyin', result.publishing.douyin)} />}
+                    {result.titles.bilibili.length > 0 && <PublishingPackCard platform="bilibili" pack={result.publishing.bilibili} copied={copiedId === 'pack-bilibili'} onCopy={() => void copyPublishingPack('bilibili', result.publishing.bilibili)} />}
+                  </div>
+                </section>
+              ) : null}
             </div>
           ) : analysisState === 'idle' ? (
             <section className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/25 px-5 py-10 text-center">
               <BarChart3 className="mx-auto size-8 text-slate-600" />
               <h2 className="mt-3 font-medium text-slate-300">分析结果会出现在这里</h2>
-              <p className="mt-1 text-sm text-slate-500">先得到内容骨架，再分别生成抖音和哔哩哔哩标题。</p>
+              <p className="mt-1 text-sm text-slate-500">先找到有依据的卖点，再生成双平台 Top 3 与完整发布素材。</p>
             </section>
           ) : null}
         </div>

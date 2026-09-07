@@ -91,6 +91,23 @@ function extractOutputText(payload: unknown) {
     .join('');
 }
 
+function parseJsonOutput(outputText: string) {
+  const trimmed = outputText.replace(/^\uFEFF/, '').trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = (fenced?.[1] ?? trimmed).trim();
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const objectStart = candidate.indexOf('{');
+    const objectEnd = candidate.lastIndexOf('}');
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      return JSON.parse(candidate.slice(objectStart, objectEnd + 1));
+    }
+    throw new SyntaxError('DeepSeek 返回的内容不是有效 JSON。');
+  }
+}
+
 export async function POST(request: Request) {
   let body: { transcript?: unknown; platforms?: unknown; tone?: unknown; duration?: unknown; apiKey?: unknown; model?: unknown };
   try {
@@ -161,7 +178,7 @@ export async function POST(request: Request) {
       return Response.json({ code: 'AI_EMPTY', message: 'AI 未返回可用结果，将回退到本地规则分析。' }, { status: 502 });
     }
 
-    return Response.json(JSON.parse(outputText));
+    return Response.json(parseJsonOutput(outputText));
   } catch (error) {
     console.error('AI analysis error', error);
     return Response.json({ code: 'AI_ERROR', message: 'AI 分析遇到错误，将回退到本地规则分析。' }, { status: 502 });
